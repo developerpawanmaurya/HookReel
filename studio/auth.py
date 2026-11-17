@@ -185,6 +185,8 @@ def _create(email: str, name: str, password_hash=None, google_sub=None):
     email = email.strip().lower()
     if not EMAIL_RE.match(email):
         raise AuthError("Enter a valid email address.")
+    if config.ALLOWED_EMAILS and email not in config.ALLOWED_EMAILS:
+        raise AuthError("Sign-up is closed on this HookReel. Ask its owner to add your email.")
     uid = "u_" + secrets.token_hex(8)
     with db.engine.begin() as c:
         if c.execute(sa.select(db.users.c.id).where(db.users.c.email == email)).first():

@@ -159,6 +159,9 @@ SESSION_DAYS = int(env("HOOKREEL_SESSION_DAYS", "30"))
 # on your own computer. On a server that other people can reach, set HOOKREEL_ACCOUNTS=1: everyone then signs up
 # and signs in, and each person only sees their own videos.
 ACCOUNTS = env("HOOKREEL_ACCOUNTS", "0") == "1"
+# Who may make an account. Empty (the default) means anyone who can reach the site. A comma-separated list of email
+# addresses closes sign-up to everyone else, which is what you want on a private server: HOOKREEL_ALLOWED_EMAILS=you@x.com
+ALLOWED_EMAILS = {e.strip().lower() for e in env("HOOKREEL_ALLOWED_EMAILS", "").split(",") if e.strip()}
 # The two buttons along the top of the dashboard: the project's code, and where to follow its maker (feedback goes
 # there too). Set either to an empty value to hide that button, or point them at your own pages in a fork.
 REPO_URL = env("HOOKREEL_REPO_URL", "https://github.com/developerpawanmaurya/HookReel").strip()

@@ -24,6 +24,32 @@ HookReel runs as three containers on one Linux server: the app, PostgreSQL, and 
    admin, and no page or web request can make someone an admin: only that command can.
 6. Sign in as that admin, open **Settings, AI**, and add your AI key there (or put it in `.env`).
 
+## Free, with no domain: Oracle Cloud "Always Free"
+
+Oracle's free tier includes an Arm server (2 cores, 12 GB memory, 200 GB disk) that is enough for one person.
+`deploy/oracle-free.sh` sets it all up on first boot, with a free https address from sslip.io and sign-up closed
+to everyone but you.
+
+1. Make an Oracle Cloud account (a card is asked for to confirm who you are; the free tier is not charged).
+2. **Networking, Virtual cloud networks**: in the default VCN's security list, add ingress rules for TCP **80** and
+   **443** from `0.0.0.0/0`.
+3. **Compute, Instances, Create instance**: image **Ubuntu 24.04**, shape **VM.Standard.A1.Flex** with 2 OCPUs and
+   12 GB memory, boot volume about 150 GB, a public IPv4 address. Under **Advanced options, Initialization script**,
+   paste (with your email):
+
+   ```bash
+   #!/bin/bash
+   export HOOKREEL_OWNER=you@example.com
+   curl -fsSL https://raw.githubusercontent.com/developerpawanmaurya/HookReel/main/deploy/oracle-free.sh | bash
+   ```
+
+4. About 10 to 15 minutes later, open `https://<public-ip-with-dashes>.sslip.io` (for 1.2.3.4:
+   `https://1-2-3-4.sslip.io`), sign up with that email, and you are made the admin within a minute. Add your AI key
+   in **Settings, AI**.
+
+On two cores a one-hour video takes roughly a quarter of an hour. YouTube sometimes refuses downloads from cloud
+servers (see "Good to know"); uploads, Twitch and Kick are not affected.
+
 ## Connecting YouTube, Instagram and TikTok
 
 People connect their accounts with one click in **Settings, Connected apps**: they press Connect, sign in on the
