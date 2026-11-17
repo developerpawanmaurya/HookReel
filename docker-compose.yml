@@ -62,8 +62,31 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # Only when YouTube refuses this server ("confirm you're not a bot"): add "youtube" to COMPOSE_PROFILES in .env,
+  # with HOOKREEL_YT_PROXY=socks5://warp:1080 and HOOKREEL_YT_POT_URL=http://pot:4416. YouTube links then go out
+  # through a free Cloudflare WARP address, with a PO token, instead of the server's own (often blocked) address.
+  warp:
+    profiles: ["youtube"]
+    image: caomingjun/warp
+    restart: unless-stopped
+    device_cgroup_rules: ["c 10:200 rwm"]
+    cap_add: [MKNOD, AUDIT_WRITE, NET_ADMIN]
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      WARP_SLEEP: 2
+    volumes:
+      - warp_data:/var/lib/cloudflare-warp
+
+  pot:
+    profiles: ["youtube"]
+    image: brainicism/bgutil-ytdlp-pot-provider
+    restart: unless-stopped
+
 volumes:
   pgdata:
   data:
   caddy_data:
   caddy_config:
+  warp_data:

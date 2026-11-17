@@ -10,6 +10,8 @@ COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# lets yt-dlp use the PO-token helper (HOOKREEL_YT_POT_URL) when YouTube distrusts the server
+RUN pip install --no-cache-dir bgutil-ytdlp-pot-provider==2.0.2
 COPY studio studio
 COPY web web
 

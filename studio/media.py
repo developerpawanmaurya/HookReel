@@ -95,12 +95,30 @@ class _Quiet:
     def error(self, m): pass
 
 
-def _ydl(opts):
+def youtube_opts(url: str) -> dict:
+    """Extra yt-dlp settings for YouTube links on a server YouTube distrusts: a proxy, a PO-token helper, cookies."""
+    if not is_youtube(url):
+        return {}
+    o = {}
+    if config.YT_PROXY:
+        o["proxy"] = config.YT_PROXY
+    if config.YT_POT_URL:
+        o["extractor_args"] = {"youtubepot-bgutilhttp": {"base_url": [config.YT_POT_URL]}}
+    if config.YT_COOKIES and Path(config.YT_COOKIES).is_file():
+        o["cookiefile"] = config.YT_COOKIES
+    return o
+
+
+def _ydl(opts, url: str = ""):
     import yt_dlp
     # a channel or playlist link is answered as "a list" straight away, never walked video by video
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
                              "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+                             "concurrent_fragment_downloads": 4, **youtube_opts(url), **opts})
+
+
+def _ydl_for(url, opts):
+    return _ydl(opts, url)
 
 
 def _video_format(height):
@@ -117,7 +135,7 @@ def _biggest(job_dir: Path, stem: str) -> Path:
 
 def info(url: str) -> dict:
     """Title, channel and length, without downloading anything."""
-    with _youtube_guard(url), _ydl({}) as ydl:
+    with _youtube_guard(url), _ydl_for(url, {}) as ydl:
         i = ydl.extract_info(url, download=False)
     return {"title": i.get("title") or "", "uploader": i.get("uploader") or i.get("channel") or "",
             "duration": float(i.get("duration") or 0), "is_live": bool(i.get("is_live")),
@@ -130,7 +148,7 @@ def youtube_words(url: str):
     if not is_youtube(url):
         return None
     import json
-    with _youtube_guard(url), _ydl({}) as ydl:
+    with _youtube_guard(url), _ydl_for(url, {}) as ydl:
         i = ydl.extract_info(url, download=False)
         auto = i.get("automatic_captions") or {}
         key = next((k for k in auto if k.endswith("-orig")), None)
@@ -149,7 +167,7 @@ def youtube_english_words(url: str):
     if not is_youtube(url):
         return None
     import json
-    with _youtube_guard(url), _ydl({}) as ydl:
+    with _youtube_guard(url), _ydl_for(url, {}) as ydl:
         i = ydl.extract_info(url, download=False)
         tracks = []
         for group in (i.get("subtitles") or {}, i.get("automatic_captions") or {}):
@@ -249,7 +267,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
         if on_progress and d.get("status") == "downloading" and total:
             on_progress(d.get("downloaded_bytes", 0) / total)
 
-    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
+    with _youtube_guard(url), _ydl_for(url, {"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
                "progress_hooks": [hook]}) as ydl:
         ydl.download([url])
     return _biggest(job_dir, "audio_src")
@@ -257,7 +275,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
 
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
-    with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
+    with _youtube_guard(url), _ydl_for(url, {"format": _video_format(height), "merge_output_format": "mp4",
                                     "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
         ydl.download([url])
     return _biggest(job_dir, "source")
@@ -272,7 +290,7 @@ def download_section(url: str, out_dir: Path, stem: str, start: float, end: floa
             "download_ranges": download_range_func(None, [(max(0.0, start), end)])}
     if exact:
         opts["force_keyframes_at_cuts"] = True
-    with _youtube_guard(url), _ydl(opts) as ydl:
+    with _youtube_guard(url), _ydl_for(url, opts) as ydl:
         ydl.download([url])
     return _biggest(out_dir, stem)
 
