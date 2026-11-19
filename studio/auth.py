@@ -340,13 +340,20 @@ def cookie_args(token: str) -> dict:
 
 
 # ---------------------------------------------------------------- Sign in with Google
+def _google_keys() -> tuple:
+    """The Google app for signing in: GOOGLE_CLIENT_ID/SECRET when set, else the Google app saved in the dashboard
+    for connecting YouTube (Settings, Connected apps). It is the same kind of app, so one is enough for both."""
+    from . import accounts                 # here, not at the top: accounts imports this module's neighbours
+    return accounts.app_keys("google")
+
+
 def google_ready() -> bool:
-    return all(config.google_client())
+    return all(_google_keys())
 
 
 def google_url(next_path: str = "/app") -> tuple:
     """(address to send the browser to, the one-time state to remember in that browser's cookie)."""
-    cid, _ = config.google_client()
+    cid, _ = _google_keys()
     state = secrets.token_urlsafe(24)
     with _lock:
         for k in [k for k, v in _states.items() if v[0] < time.time() - 900]:
@@ -367,7 +374,7 @@ def google_finish(code: str, state: str):
         st = _states.pop(state, None)
     if not st:
         raise AuthError("That sign-in link has expired. Try again.")
-    cid, secret = config.google_client()
+    cid, secret = _google_keys()
     tok = httpx.post("https://oauth2.googleapis.com/token", timeout=30, data={
         "code": code, "client_id": cid, "client_secret": secret, "grant_type": "authorization_code",
         "redirect_uri": config.PUBLIC_URL + "/auth/google/callback"})
