@@ -58,9 +58,20 @@ Rules:
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
 - score: 0-100, how likely a stranger keeps watching. Be honest; most clips are 50-80.
 - hook: at most 5 words, ALL CAPS, shown as big text on the video. Curiosity, but true to what happens.
-- title: at most 70 characters, for the post.
-- description: one or two sentences.
-- hashtags: 5 tags without the # sign.
+- title: 40 to 70 characters, written to stop a scroller on YouTube Shorts, Reels and TikTok:
+  * Put the streamer's name (from Channel) and the game or topic in the first few words; people search for them.
+  * Make a curiosity gap or name an emotion ("can't believe", "lost it", "wasn't ready"), but it must be true to
+    what happens in the clip. No made-up events, no "you won't believe" filler, no question the clip never answers.
+  * At most one or two words in CAPS for punch, and at most one emoji, at the end. No hashtags in the title.
+  * Good: "CarryMinati Lands the Cleanest Headshot in GTA 6 😳", "IShowSpeed Was NOT Ready for This GTA 6 Glitch".
+    Bad: "GTA 6 Car Handling Delivers Hollywood-Style Slides" (reads like a review), "Loud moment", "Funny clip".
+- description: two or three short lines, written for the post:
+  * Line 1: the hook as a sentence of at most 90 characters (it is all most people read).
+  * Line 2: what happens, naming the streamer and the game, in plain words.
+  * Line 3: one short question to the viewer that invites a comment ("Would you have taken that shot?").
+- hashtags: 5 to 7 tags without the # sign, lowercase, no spaces: the game, the streamer's name, the kind of
+  moment (funny, clutch, fail, rage), and one or two broad ones people follow (gaming, gamingclips). Never "shorts":
+  that one is added by itself.
 - highlight_words: 3 to 6 single words spoken in the clip that carry the punch.
 - Write hook, title, description, hashtags and highlight_words in English. If the video is in Hindi or Urdu,
   you may write them the way people type Hindi and Urdu in Roman letters (Hinglish: "yaar ye kya hai"), never
@@ -254,7 +265,7 @@ def fallback_by_loudness(db, words, n, max_len, duration):
         if not any(s <= w["s"] <= e for w in words):
             continue
         picks.append({"start": s, "end": e, "score": 50, "category": "other", "hook": "WAIT FOR IT",
-                      "title": "Loud moment", "description": "", "hashtags": [], "highlight_words": [],
+                      "title": "", "description": "", "hashtags": [], "highlight_words": [],
                       "reason": "Picked by loudness because the AI was unavailable."})
         if len(picks) >= n:
             break

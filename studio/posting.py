@@ -100,9 +100,29 @@ def on_clip_ready(job, clip):
         creators.log(c["id"], f"Queued for {len(made)} account(s): {clip.get('title') or clip.get('hook')}")
 
 
-def _caption(clip, creator):
+def _credit(job) -> str:
+    """Who the clip is from, with a link to the original: fair to the streamer, and it keeps the post honest."""
+    who = (job.get("uploader") or "").strip()
+    src = (job.get("source") or {}).get("url") or ""
+    if not who and not src.startswith("http"):
+        return ""
+    line = f"🎥 Clip from {who}'s stream" if who else "🎥 Original stream"
+    return line + (f": {src}" if src.startswith("http") else "")
+
+
+def _title(clip, job) -> str:
+    """The clip's own title, or, for a clip picked without the AI, the streamer and the video it came from."""
+    t = (clip.get("title") or "").strip()
+    if t:
+        return t[:100]
+    who, vid = (job.get("uploader") or "").strip(), (job.get("title") or "").strip()
+    t = f"{who}: {vid}" if who and vid and who.lower() not in vid.lower() else (vid or who or clip.get("hook") or "Clip")
+    return t[:100]
+
+
+def _caption(clip, creator, job=None):
     tags = " ".join("#" + h for h in clip.get("hashtags", []))
-    return "\n\n".join(x for x in (clip.get("description", ""), tags, creator.get("post_footer", "")) if x)
+    return "\n\n".join(x for x in (clip.get("description", ""), _credit(job or {}), tags, creator.get("post_footer", "")) if x)
 
 
 def _post(p):
@@ -116,7 +136,7 @@ def _post(p):
             raise RuntimeError("That account was disconnected.")
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
-        title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
+        title, cap = _title(clip, job), _caption(clip, creator, job)
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
         elif acc["platform"] == "instagram":

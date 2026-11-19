@@ -264,8 +264,11 @@ class Session:
             p = f"p{self.part:02d}"
             cmd = ["ffmpeg", "-v", "error", "-reconnect", "1", "-reconnect_streamed", "1",
                    "-reconnect_delay_max", "10"]
+            # YouTube ties a stream's address to the IP that asked for it: when YouTube links go through a proxy
+            # (HOOKREEL_YT_PROXY), ffmpeg has to fetch the stream through the same one.
+            proxy = config.YT_PROXY if config.YT_PROXY.startswith("http") and media.is_youtube(url) else ""
             for u in info["urls"]:
-                cmd += ["-i", u]
+                cmd += (["-http_proxy", proxy] if proxy else []) + ["-i", u]
             a_in = "1:a:0" if len(info["urls"]) > 1 else "0:a:0"
             cmd += ["-map", "0:v:0", "-map", a_in, "-c", "copy", "-f", "segment", "-segment_time", str(SEG_SEC),
                     "-reset_timestamps", "1", "-segment_format", "mpegts", "-segment_list", f"{p}.csv",
