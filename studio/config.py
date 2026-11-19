@@ -125,7 +125,8 @@ FONTS_DIR = DATA_DIR / "fonts"          # caption fonts, copied from studio/font
 # clips (seconds instead of transcribing hours), and our own model is run only on the clips themselves.
 YT_TRANSCRIPT = env("HOOKREEL_YT_TRANSCRIPT", "1") != "0"
 # When YouTube refuses a server's downloads ("confirm you're not a bot"), these help, for YouTube links only:
-#   HOOKREEL_YT_PROXY    a proxy to fetch YouTube through, e.g. socks5://warp:1080 (the "youtube" profile in
+#   HOOKREEL_YT_PROXY    a proxy to fetch YouTube through, e.g. http://warp:1080 (http, not socks: ffmpeg
+#                        fetches the clip pieces through it too, and it only speaks http) (the "youtube" profile in
 #                        docker-compose.yml runs a free Cloudflare WARP proxy at that address)
 #   HOOKREEL_YT_POT_URL  a PO-token helper (the "youtube" profile runs one at http://pot:4416)
 #   HOOKREEL_YT_COOKIES  a cookies.txt from a signed-in YouTube session (use a spare Google account, not your own)

@@ -53,7 +53,7 @@ HOOKREEL_DOMAIN=$DOMAIN
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 COMPOSE_PROFILES=own-https,youtube
 # Cloud addresses are often refused by YouTube: fetch YouTube through Cloudflare WARP, with a PO token
-HOOKREEL_YT_PROXY=socks5://warp:1080
+HOOKREEL_YT_PROXY=http://warp:1080
 HOOKREEL_YT_POT_URL=http://pot:4416
 HOOKREEL_ALLOWED_EMAILS=$HOOKREEL_OWNER
 # Two cores: one video at a time keeps the site responsive

@@ -4,8 +4,10 @@
 set -euo pipefail
 cd /opt/hookreel
 git pull --ff-only
+# ffmpeg (which fetches clip pieces) cannot use a SOCKS proxy: use the same WARP helper over HTTP
+sed -i 's#^HOOKREEL_YT_PROXY=socks5://warp:1080#HOOKREEL_YT_PROXY=http://warp:1080#' .env
 grep -q '^HOOKREEL_YT_PROXY=' .env || cat >> .env <<'ENV'
-HOOKREEL_YT_PROXY=socks5://warp:1080
+HOOKREEL_YT_PROXY=http://warp:1080
 HOOKREEL_YT_POT_URL=http://pot:4416
 ENV
 grep -q '^COMPOSE_PROFILES=.*youtube' .env || sed -i 's/^COMPOSE_PROFILES=\(.*\)$/COMPOSE_PROFILES=\1,youtube/' .env
