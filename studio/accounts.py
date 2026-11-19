@@ -28,6 +28,9 @@ SETTING_DEFAULTS = {"discord_webhook": "", "telegram_token": "", "telegram_chat"
 
 YT_SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 IG = "https://graph.instagram.com"
+IG_HOST = IG
+FB_VER = "v25.0"
+FB = f"https://graph.facebook.com/{FB_VER}"   # Instagram API with Unified login (newer Meta apps)
 IG_UPLOAD = "https://rupload.facebook.com/ig-api-upload/v21.0"
 IG_SCOPES = "instagram_business_basic,instagram_business_content_publish"
 TT = "https://open.tiktokapis.com/v2"
@@ -69,7 +72,7 @@ def _write(name, data):
 # ------------------------------------------------------------------ the server's apps with each platform
 # name -> (what the platform calls the id, what it calls the secret, .env names for both)
 APPS = {"google": ("Client ID", "Client secret", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
-        "instagram": ("Instagram app ID", "Instagram app secret", "HOOKREEL_IG_APP_ID", "HOOKREEL_IG_APP_SECRET"),
+        "instagram": ("Meta app ID", "Meta app secret", "HOOKREEL_IG_APP_ID", "HOOKREEL_IG_APP_SECRET"),
         "tiktok": ("Client key", "Client secret", "HOOKREEL_TIKTOK_CLIENT_KEY", "HOOKREEL_TIKTOK_CLIENT_SECRET")}
 APP_FOR = {"youtube": "google", "instagram": "instagram", "tiktok": "tiktok"}
 _apps_seen = {"at": None, "data": {}}
@@ -105,6 +108,13 @@ def app_keys(name: str) -> tuple:
     return (config.env(id_env) or "").strip(), (config.env(secret_env) or "").strip()
 
 
+def ig_config_id() -> str:
+    """The Facebook Login for Business configuration of the Meta app ("API setup with Unified login"). Meta apps made
+    since autumn 2026 only offer that setup; older apps with "API setup with Instagram login" leave this empty."""
+    saved = (_apps_saved().get("instagram") or {}).get("config", "")
+    return str(saved or config.env("HOOKREEL_IG_CONFIG_ID") or "").strip()
+
+
 def can_connect(platform: str) -> bool:
     return all(app_keys(APP_FOR[platform]))
 
@@ -121,11 +131,12 @@ def apps_public() -> dict:
         out[platform] = {"ready": bool(cid and secret), "id_label": APPS[name][0], "secret_label": APPS[name][1],
                          "id_hint": cid[:6] + "…" if len(cid) > 10 else cid, "redirect": redirect_for(platform),
                          "https": config.PUBLIC_URL.startswith("https://"),
-                         "from_dashboard": bool((_apps_saved().get(name) or {}).get("id"))}
+                         "from_dashboard": bool((_apps_saved().get(name) or {}).get("id")),
+                         **({"config_hint": ig_config_id()} if platform == "instagram" else {})}
     return out
 
 
-def save_app(platform: str, cid: str, secret: str) -> dict:
+def save_app(platform: str, cid: str, secret: str, config_id: str | None = None) -> dict:
     """Save the server's app for a platform, from the dashboard. An empty secret keeps the saved one."""
     if platform not in APP_FOR:
         raise ValueError("Unknown platform.")
@@ -143,6 +154,11 @@ def save_app(platform: str, cid: str, secret: str) -> dict:
     with _lock:
         data = dict(_apps_saved())
         data[name] = {"id": cid, "secret": secret}
+        if platform == "instagram":
+            keep = (old.get("config", "") if old.get("id") == cid else "")
+            conf = re.sub(r"\D", "", str(config_id or "")) if config_id is not None else keep
+            if conf:
+                data[name]["config"] = conf[:40]
         tmp = _apps_file().with_suffix(".tmp")
         tmp.write_text(json.dumps(data), encoding="utf-8")
         try:
@@ -180,6 +196,10 @@ def connect_url(platform: str) -> str:
         return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
             "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": YT_SCOPES,
             "access_type": "offline", "prompt": "consent", "state": state})
+    if platform == "instagram" and ig_config_id():
+        return f"https://www.facebook.com/{FB_VER}/dialog/oauth?" + urlencode({
+            "client_id": cid, "config_id": ig_config_id(), "redirect_uri": redirect, "response_type": "code",
+            "override_default_response_type": "true", "state": state})
     if platform == "instagram":
         return "https://www.instagram.com/oauth/authorize?" + urlencode({
             "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state})
@@ -368,6 +388,8 @@ def youtube_views(acc, ids: list) -> dict:
 
 # ------------------------------------------------------------------ Instagram (Instagram Login, professional accounts)
 def _instagram_finish(code: str) -> dict:
+    if ig_config_id():
+        return _instagram_unified_finish(code)
     cid, secret = app_keys("instagram")
     short = _check(httpx.post("https://api.instagram.com/oauth/access_token", data={
         "client_id": cid, "client_secret": secret, "grant_type": "authorization_code",
@@ -393,12 +415,57 @@ def _instagram_save(token: str) -> dict:
     return acc
 
 
+def _instagram_unified_finish(code: str) -> dict:
+    """Unified login: Facebook's dialog with the app's configuration. It hands back a token for the business
+    portfolio's system user, with the Instagram account the person ticked."""
+    cid, secret = app_keys("instagram")
+    tok = _check(httpx.get(f"{FB}/oauth/access_token", params={
+        "client_id": cid, "client_secret": secret, "redirect_uri": redirect_for("instagram"), "code": code},
+        timeout=30), "Instagram sign-in").json()["access_token"]
+    ids = []
+    # The accounts granted to this token: first the ones Meta assigns, then the ids the grant itself names.
+    try:
+        r = httpx.get(f"{FB}/me/assigned_instagram_accounts", params={"fields": "id,username", "access_token": tok},
+                      timeout=30)
+        ids += [str(a["id"]) for a in (r.json().get("data") or []) if a.get("id")]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        dbg = httpx.get(f"{FB}/debug_token", params={"input_token": tok, "access_token": f"{cid}|{secret}"},
+                        timeout=30).json().get("data") or {}
+        if not any(str(g.get("scope")) == "instagram_content_publish" for g in dbg.get("granular_scopes") or []):
+            raise ValueError("HookReel needs permission to publish. Connect again and leave every box ticked.")
+        for g in dbg.get("granular_scopes") or []:
+            if str(g.get("scope")) in ("instagram_basic", "instagram_content_publish"):
+                ids += [str(t) for t in g.get("target_ids") or []]
+    except ValueError:
+        raise
+    except Exception:  # noqa: BLE001
+        pass
+    made = None
+    for ig in dict.fromkeys(ids):
+        r = httpx.get(f"{FB}/{ig}", params={"fields": "id,username", "access_token": tok}, timeout=30)
+        if r.status_code != 200 or not r.json().get("username"):
+            continue                       # an id this token cannot read (a Page, an ad account)
+        me = r.json()
+        made = {"id": f"ig_{me['id']}", "platform": "instagram", "name": "@" + me["username"], "added": time.time(),
+                "user_id": str(me["id"]), "token": tok, "token_time": time.time(), "graph": FB,
+                "detail": "Professional account (Unified login)"}
+        _put(made)
+    if not made:
+        raise ValueError("No Instagram account came back. Connect again and tick your Instagram account, and make "
+                         "sure it is a Creator or Business account in the same business portfolio as the Meta app.")
+    return made
+
+
 def instagram_add(token: str) -> dict:
     """An account added with a token pasted from the Meta app dashboard (older way; Connect is the normal one)."""
     return _instagram_save(token.strip())
 
 
 def _ig_token(acc) -> str:
+    if acc.get("graph"):
+        return acc["token"]              # a system-user token from Unified login: it does not run out
     if time.time() - acc.get("token_time", 0) > 7 * 86400:  # tokens last 60 days; refresh weekly
         try:
             r = _check(httpx.get(f"{IG}/refresh_access_token", params={"grant_type": "ig_refresh_token"},
@@ -416,6 +483,7 @@ def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
     token = _ig_token(acc)
     auth = {"Authorization": f"Bearer {token}"}
     uid = acc["user_id"]
+    IG = acc.get("graph") or IG_HOST  # noqa: N806 - graph.facebook.com for Unified login accounts
     if config.PUBLIC_URL.startswith("https://") and job_id:
         box = _check(httpx.post(f"{IG}/{uid}/media", data={"media_type": "REELS", "video_url": clip_link(job_id, path.name),
                                                            "caption": caption[:2200], "share_to_feed": "true"},
@@ -450,6 +518,7 @@ def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
 
 
 def instagram_views(acc, media_id: str):
+    IG = acc.get("graph") or IG_HOST  # noqa: N806
     r = httpx.get(f"{IG}/{media_id}/insights", params={"metric": "views"},
                   headers={"Authorization": f"Bearer {_ig_token(acc)}"}, timeout=30)
     if r.status_code != 200:

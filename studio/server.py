@@ -1455,7 +1455,8 @@ def apps_get(request: Request):
 def apps_put(request: Request, body: dict = Body(...)):
     _admin(request)
     try:
-        return accounts.save_app(str(body.get("platform", "")), body.get("client_id"), body.get("client_secret"))
+        return accounts.save_app(str(body.get("platform", "")), body.get("client_id"), body.get("client_secret"),
+                                 body.get("config_id") if "config_id" in body else None)
     except ValueError as e:
         raise HTTPException(400, str(e))
 

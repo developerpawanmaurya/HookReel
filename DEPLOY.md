@@ -59,8 +59,11 @@ them in `.env`, see `.env.example`). The redirect address to register is shown i
 
 - **YouTube** (Google Cloud): an OAuth client of type Web application, with YouTube Data API v3 turned on. Until
   Google verifies the app, people see a warning screen and uploads stay private.
-- **Instagram** (Meta for Developers): a Business app with Instagram (API setup with Instagram login). Works with
-  Creator and Business accounts. Until Meta reviews the app, only accounts added as testers can connect. Instagram
+- **Instagram** (Meta for Developers): an app with the "Manage messaging & content on Instagram" use case. Meta
+  apps made since autumn 2026 only offer **API setup with Unified login**: link the app to a business portfolio,
+  create a configuration (system-user token, with instagram_content_publish), register the redirect address on it,
+  and paste the App ID, App secret and Configuration ID. Older apps with API setup with Instagram login leave the
+  Configuration ID empty. Works with Creator and Business accounts. Until Meta reviews the app, only accounts added as testers can connect. Instagram
   fetches each clip from a one-hour signed link on your site, so the site needs a public https address.
 - **TikTok** (TikTok for Developers): an app with Login Kit and the Content Posting API (Direct Post), scopes
   `user.info.basic` and `video.publish`. Until TikTok audits the app, clips are posted as private (HookReel does

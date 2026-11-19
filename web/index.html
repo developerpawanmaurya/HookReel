@@ -2092,8 +2092,9 @@ async function drawSettings() {
            "Add the address below under <b>Authorised redirect URIs</b>.", "Paste its Client ID and Client secret here."],
           "Until Google verifies your app, people see a warning when they connect, and uploads stay private."],
         instagram: ["https://developers.facebook.com/apps", "Meta for Developers",
-          ["Create a <b>Business</b> app and add <b>Instagram</b> (API setup with Instagram login).",
-           "Under <b>Business login settings</b>, add the address below as a redirect URL.", "Paste the <b>Instagram app ID</b> and <b>Instagram app secret</b> here."],
+          ["Create an app with the <b>Manage messaging &amp; content on Instagram</b> use case, linked to a business portfolio.",
+           "Open <b>API setup with Unified login</b>, create a configuration (system-user token) with <b>instagram_content_publish</b>, and register the address below as its redirect URL.",
+           "Paste the <b>App ID</b> and <b>App secret</b> (App settings, Basic) and the <b>Configuration ID</b> here. Older apps with <i>API setup with Instagram login</i>: leave Configuration ID empty and use the Instagram app ID and secret."],
           "Works with Creator and Business Instagram accounts. Until Meta reviews your app, only accounts you add as testers can connect."],
         tiktok: ["https://developers.tiktok.com/apps", "TikTok for Developers",
           ["Create an app and add <b>Login Kit</b> and <b>Content Posting API</b> with Direct Post turned on.",
@@ -2110,7 +2111,8 @@ async function drawSettings() {
             <div class="copyrow"><code>${esc(st.redirect)}</code><button class="btn sm" data-act="copytext" data-t="${esc(st.redirect)}">${ic("copy")}Copy</button></div>
             ${!st.https && pf !== "youtube" ? `<p class="warnline">${name} only accepts https addresses. Put HookReel on a domain with https (or a tunnel) and set HOOKREEL_PUBLIC_URL to it first.</p>` : ""}
             <div class="fields"><label class="f">${esc(st.id_label)}<input id="app_id" placeholder="${st.ready ? "Saved: " + esc(st.id_hint) + ". Paste a new one to replace it" : ""}" autocomplete="off" spellcheck="false"></label>
-              <label class="f">${esc(st.secret_label)}<input id="app_secret" type="password" placeholder="${st.ready ? "Saved. Paste a new one to replace it" : ""}" autocomplete="off"></label></div>
+              <label class="f">${esc(st.secret_label)}<input id="app_secret" type="password" placeholder="${st.ready ? "Saved. Paste a new one to replace it" : ""}" autocomplete="off"></label>
+              ${pf === "instagram" ? `<label class="f">Configuration ID <small>(Unified login)</small><input id="app_config" value="${esc(st.config_hint || "")}" inputmode="numeric" autocomplete="off" spellcheck="false"></label>` : ""}</div>
             <p class="sub">${g[3]}</p>
             <div class="row"><button class="btn primary" data-act="appsave" data-p="${pf}">Save</button><button class="btn ghost" data-act="appsetup" data-p="">Close</button></div></div>` : "";
         return `<div class="appcard"><span class="applogo" style="background:${bg}">${logo}</span>
@@ -2439,7 +2441,8 @@ document.addEventListener("click", async e => {
     if (a === "appsetup") { S.setupOpen = d.p && S.setupOpen !== d.p ? d.p : ""; return drawSettings(); }
     if (a === "copytext") { await navigator.clipboard.writeText(d.t); return toast("Copied", "ok"); }
     if (a === "appsave") {
-      await send("/api/apps", {platform: d.p, client_id: $("#app_id").value, client_secret: $("#app_secret").value}, "PUT");
+      await send("/api/apps", {platform: d.p, client_id: $("#app_id").value, client_secret: $("#app_secret").value,
+        ...($("#app_config") ? {config_id: $("#app_config").value} : {})}, "PUT");
       S.setupOpen = ""; S.status = await api("/api/status"); toast("Saved. People can connect now.", "ok"); return drawSettings();
     }
     if (a === "bell") return openBell();

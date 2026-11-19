@@ -61,6 +61,7 @@ def main() -> int:
                 ("ad breaks and frozen screens", ["tests/test_static.py"]),
                 ("a private server: only listed emails can sign up", ["tests/test_allowlist.py"]),
                 ("stopping a video that is waiting or being made", ["tests/test_stop.py"]),
+                ("Instagram through Meta's Unified login", ["tests/test_ig_unified.py"]),
                 ("answers that are not quite right", ["tests/test_answer.py"]),
                 ("knowing which game a stream is", ["tests/test_games.py"]),
                 ("finding the facecam in a gaming stream", ["tests/test_facecam.py"]),
