@@ -183,10 +183,48 @@ def save(job):
         tmp.replace(d / "job.json")
 
 
+class Stopped(Exception):
+    """The person pressed Stop on a video that was being made."""
+
+
+STOPPED = "You stopped this video. Clips already made are kept; delete it, or add the link again to start over."
+
+
 def _set(job, **kw):
+    # A video the person stopped: the next progress update of its work (any thread) ends that work here.
+    if job.get("stop") and "status" not in kw:
+        raise Stopped()
     with _lock:
         job.update(kw)
     save(job)
+
+
+def request_stop(jid) -> dict:
+    """Stop a video that is waiting or being made. A waiting one stops at once; a running one at its next step
+    (within seconds; a clip being cut finishes first)."""
+    job = _jobs.get(jid)
+    if not job or job.get("status") not in ("queued", "running"):
+        raise ValueError("This video isn't being made.")
+    with _lock:
+        job["stop"] = True
+        job.pop("resume", None)
+    if job["status"] == "queued":
+        _mark_stopped(job)
+    return job
+
+
+def _mark_stopped(job):
+    for c in job["clips"]:
+        if c.get("status") in ("queued", "rendering"):
+            c.update(status="error", error="The video was stopped before this clip was made.")
+    with _lock:
+        job.update(status="error", error=STOPPED, stage="Stopped")
+        job.pop("stop", None)
+    save(job)
+    try:
+        creators.log(job["creator"], f"Video stopped: {job.get('title') or job['id']}")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _remap(path, folder: Path):
@@ -809,6 +847,11 @@ def _worker(quick_only=False):
             if kind == "job":
                 _q.done()
             continue
+        if kind == "job" and (job.get("stop") or job.get("status") != "queued" and job.get("error") == STOPPED):
+            if job.get("stop"):
+                _mark_stopped(job)
+            _q.done()
+            continue
         token = ctx._uid.set(job["user"])  # everything this job does runs as its owner
         try:
             if kind == "job":
@@ -819,7 +862,13 @@ def _worker(quick_only=False):
                 if clip.get("captions", True):
                     words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 render_one(job, clip, words)
+        except Stopped:
+            if kind == "job":
+                _mark_stopped(job)
         except Exception as e:  # noqa: BLE001
+            if kind == "job" and job.get("stop"):
+                _mark_stopped(job)
+                continue
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
                 for c in job["clips"]:

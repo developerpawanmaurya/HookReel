@@ -943,6 +943,17 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     return jobs.public(job)
 
 
+@app.post("/api/jobs/{jid}/stop")
+def stop_job(jid: str):
+    _job_or_404(jid)
+    try:
+        job = jobs.request_stop(jid)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    ctx.bump()
+    return jobs.public(job)
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)
