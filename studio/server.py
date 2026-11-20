@@ -1268,12 +1268,14 @@ def _ai_error(e) -> str:
 
 @app.get("/api/update")
 def update_get(request: Request):
+    from . import updates
     _admin(request)
     return updates.progress()
 
 
 @app.post("/api/update")
 def update_post(request: Request):
+    from . import updates
     _admin(request)
     _throttle("selfupdate:" + ctx.uid(), 6, 600)
     try:
