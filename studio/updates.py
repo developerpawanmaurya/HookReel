@@ -9,9 +9,11 @@ sent. The owner sees a notice in the dashboard within a minute or two, with no r
     HOOKREEL_UPDATE_REPO     where to look (default: the project's own repository; a fork points at itself)
     HOOKREEL_UPDATE_BRANCH   which branch (default: main)
     HOOKREEL_UPDATE_CHECK=0  never look"""
+import json
 import re
 import threading
 import time
+from pathlib import Path
 
 import httpx
 
@@ -114,7 +116,46 @@ def check(force: bool = False):
 
 def latest():
     """For the pages: what the last look found. Never waits on GitHub."""
-    return _state["result"] if ON else None
+    r = _state["result"] if ON else None
+    return dict(r, self_update=can_self_update()) if r else None
+
+
+# ---------------------------------------------------------------- one-click updates on a server
+# deploy/oracle-update.sh installs a small helper on the server itself (a systemd path unit). It watches the folder
+# mounted here at /hostctl: when HookReel drops a request file in it, the server pulls the newest version from GitHub
+# and rebuilds, outside this container, so the update carries on while HookReel restarts. The request file holds
+# nothing but a time: what runs is always deploy/self-update.sh from the project, never anything sent from here.
+HOSTCTL = Path(config.env("HOOKREEL_HOSTCTL") or "/hostctl")
+
+
+def can_self_update() -> bool:
+    return (HOSTCTL / "updater").is_file()
+
+
+def request_update() -> dict:
+    if not can_self_update():
+        raise ValueError("This server can't update itself yet. Run the update command on the server once to turn it on.")
+    st = progress()
+    if st.get("state") in ("requested", "running") and time.time() - float(st.get("at") or 0) < 1800:
+        return st
+    (HOSTCTL / "update-requested").write_text(str(int(time.time())), encoding="utf-8")
+    return {"state": "requested", "at": time.time()}
+
+
+def progress() -> dict:
+    """What the server's updater last said: requested, running, done or failed, with the end of its log."""
+    out = {"state": "", "at": 0, "running": RUNNING[:7]}
+    try:
+        out.update(json.loads((HOSTCTL / "update-status").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    if (HOSTCTL / "update-requested").is_file() and out.get("state") != "running":
+        out["state"] = "requested"
+    try:
+        out["log"] = (HOSTCTL / "update.log").read_text(encoding="utf-8", errors="replace")[-1500:]
+    except OSError:
+        out["log"] = ""
+    return out
 
 
 def start():

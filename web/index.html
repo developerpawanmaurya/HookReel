@@ -1229,11 +1229,30 @@ function updateHow() {
   d.innerHTML = `<form method="dialog" class="dlg upd"><h2>${up.restart ? "The new version is ready" : "A new version of HookReel is out"}</h2>
     <p class="help">${up.restart ? "The new files are already in the HookReel folder. <b>Close HookReel and start it again</b> to use them." : `You're on <b>${esc(up.current)}</b>. ${up.behind ? `${up.behind} update${up.behind === 1 ? " has" : "s have"} been added since.` : "Newer changes have been added since."}`} Your settings, keys and clips stay as they are.</p>
     ${up.notes.length ? `<ul>${up.notes.map(n => `<li>${esc(n.title)} <small>${esc(n.date)}</small></li>`).join("")}</ul>` : ""}
-    ${up.restart ? "" : cmd("Ask your AI coding assistant (Claude, Cursor, Copilot...)", ai) + cmd("Or run it yourself, in the HookReel folder", "git pull && pip install -r requirements.txt")}
-    <p class="sub">${up.restart ? "" : "Then stop HookReel and start it again. With Docker, run <code>git pull && docker compose up -d --build</code> instead. "}<a class="lnk" href="${esc(up.url)}" target="_blank" rel="noopener">See every change on GitHub</a></p>
-    <div class="dlg-foot"><button class="btn" value="later">Remind me next version</button><button class="btn primary" value="ok" autofocus>Got it</button></div></form>`;
-  d.onclose = () => { if (d.returnValue === "later") { try { localStorage.setItem("hookreel_update_seen", up.latest); } catch {} drawShell(); } };
+    ${up.restart || up.self_update ? "" : cmd("Ask your AI coding assistant (Claude, Cursor, Copilot...)", ai) + cmd("Or run it yourself, in the HookReel folder", "git pull && pip install -r requirements.txt")}
+    <p class="sub">${up.self_update ? "This server updates itself: press <b>Update now</b>. HookReel restarts in a few minutes, and anything being clipped carries on after. " : up.restart ? "" : "Then stop HookReel and start it again. With Docker, run <code>git pull && docker compose up -d --build</code> instead. "}<a class="lnk" href="${esc(up.url)}" target="_blank" rel="noopener">See every change on GitHub</a></p>
+    <div class="dlg-foot"><button class="btn" value="later">Remind me next version</button>${up.self_update ? `<button class="btn primary" value="now" autofocus>Update now</button>` : `<button class="btn primary" value="ok" autofocus>Got it</button>`}</div></form>`;
+  d.onclose = () => {
+    if (d.returnValue === "now") return selfUpdate();
+    if (d.returnValue === "later") { try { localStorage.setItem("hookreel_update_seen", up.latest); } catch {} drawShell(); }
+  };
   d.returnValue = "ok"; d.showModal();
+}
+/* one-click update: the server pulls the new version and rebuilds by itself; this page waits for it to come back */
+let updWatch = null;
+async function selfUpdate() {
+  if (updWatch) return toast("The update is already running.");
+  const from = S.status?.update?.current || "";
+  try { await send("/api/update", {}); } catch (e) { return toast(e.message, "bad"); }
+  toast("Updating HookReel. It restarts in a few minutes; this page reloads by itself.", "ok");
+  const t0 = Date.now();
+  updWatch = setInterval(async () => {
+    let st = null;
+    try { st = await api("/api/update"); } catch { return; }            // down while it restarts: keep waiting
+    if (st.state === "failed") { clearInterval(updWatch); updWatch = null; return toast("The update failed: " + (st.log || "").trim().split("\n").slice(-2).join(" "), "bad"); }
+    if (st.state === "done" && st.running && st.running !== from) { clearInterval(updWatch); updWatch = null; toast("HookReel is updated.", "ok"); return setTimeout(() => location.reload(), 1200); }
+    if (Date.now() - t0 > 20 * 60000) { clearInterval(updWatch); updWatch = null; toast("The update is taking a long time. Check the server.", "bad"); }
+  }, 6000);
 }
 function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; }
 let lastInd = null;
@@ -1296,7 +1315,7 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
   let upSeen = "";
   try { upSeen = localStorage.getItem("hookreel_update_seen") || ""; } catch {}
   const upBar = up && up.latest !== upSeen ? `<div class="vb" role="status">${ic("up")}<span>${up.restart ? "<b>The new version is downloaded.</b> Close HookReel and start it again to use it." : `A new version of HookReel is out${up.behind ? `: <b>${up.behind} update${up.behind === 1 ? "" : "s"}</b> since yours` : ""}.`}</span>
-    <button class="btn sm primary" data-act="updhow">${up.restart ? "What's new" : "How to update"}</button><button class="btn sm ghost" data-act="updlater" aria-label="Hide until the next version">Later</button></div>` : "";
+    ${up.self_update ? `<button class="btn sm primary" data-act="updnow">${ic("up")}Update now</button><button class="btn sm" data-act="updhow">What's new</button>` : `<button class="btn sm primary" data-act="updhow">${up.restart ? "What's new" : "How to update"}</button>`}<button class="btn sm ghost" data-act="updlater" aria-label="Hide until the next version">Later</button></div>` : "";
   const toolBar = S.status.no_ffmpeg ? `<div class="vb" role="alert">${ic("warn")}<span><b>HookReel can't make clips yet: ffmpeg isn't installed on this computer.</b> Open a terminal, run <code>winget install Gyan.FFmpeg</code> (Mac: <code>brew install ffmpeg</code>, Linux: <code>sudo apt install ffmpeg</code>), then close HookReel and start it again.</span></div>` : "";
   const aiBar = !toolBar && S.status.ai?.problem && me?.is_admin && S.view !== "settings" ? `<div class="vb" role="status">${ic("warn")}<span><b>The AI isn't answering.</b> ${esc(S.status.ai.problem)} Until then, clips are picked by loudness.</span><button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">Open AI settings</button></div>` : "";
   const diskBar = !toolBar && S.status.disk_full && S.view !== "settings" ? `<div class="vb" role="alert">${ic("warn")}<span><b>The drive HookReel saves to is almost full, so it can't take new videos.</b> Free up space on it, or move HookReel's folder to a bigger drive.</span>${me?.is_admin ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="storage">Open Storage</button>` : ""}</div>` : "";
@@ -2497,6 +2516,7 @@ document.addEventListener("click", async e => {
     if (a === "tour") return startTour();
     if (a === "settab") { e.preventDefault(); S.stab = d.k; remember("settings", d.k); return drawSettings(); }
     if (a === "updhow") return updateHow();
+    if (a === "updnow") { if (await ask("Update HookReel now?", "The server fetches the new version and restarts HookReel. It takes a few minutes. Anything being clipped carries on after the restart.", "Update now")) selfUpdate(); return; }
     if (a === "updlater") { try { localStorage.setItem("hookreel_update_seen", S.status.update?.latest || ""); } catch {} return drawShell(); }
     if (a === "storopen") { await send("/api/storage/open"); return; }
     if (a === "storchange") { S.storOpen = !S.storOpen; S.storNew = ""; return drawSettings(); }

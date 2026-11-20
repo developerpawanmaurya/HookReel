@@ -50,6 +50,15 @@ to everyone but you.
 On two cores a one-hour video takes roughly a quarter of an hour. YouTube sometimes refuses downloads from cloud
 servers (see "Good to know"); uploads, Twitch and Kick are not affected.
 
+**Updating.** Run this once from Cloud Shell (or any SSH session) to update and to turn on one-click updates:
+
+```bash
+ssh ubuntu@<server-ip> "curl -fsSL https://raw.githubusercontent.com/developerpawanmaurya/HookReel/main/deploy/oracle-update.sh | sudo bash"
+```
+
+After that, when a new version is out, the banner in HookReel has an **Update now** button: a small helper on the
+server (`hookreel-update.path`) pulls the new version and rebuilds, and the page reloads when it is back.
+
 ## Connecting YouTube, Instagram and TikTok
 
 People connect their accounts with one click in **Settings, Connected apps**: they press Connect, sign in on the

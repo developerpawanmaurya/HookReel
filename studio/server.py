@@ -1266,6 +1266,22 @@ def _ai_error(e) -> str:
     return safe.friendly(e, 300).replace(ai.key() or "\0", "<key>")
 
 
+@app.get("/api/update")
+def update_get(request: Request):
+    _admin(request)
+    return updates.progress()
+
+
+@app.post("/api/update")
+def update_post(request: Request):
+    _admin(request)
+    _throttle("selfupdate:" + ctx.uid(), 6, 600)
+    try:
+        return updates.request_update()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/ai")
 def ai_get(request: Request):
     _admin(request)
@@ -1282,6 +1298,7 @@ def ai_put(request: Request, body: dict = Body(...)):
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     usage.forget_all()
+    ai.clear_problem()       # a new key or model gets a clean slate; the notice comes back only if it fails too
     ctx.bump()
     return out
 
@@ -1305,7 +1322,10 @@ def ai_test(request: Request):
     _admin(request)
     _throttle("aitest:" + ctx.uid(), 20, 600)
     try:
-        return ai.test()
+        out = ai.test()
+        ai.clear_problem()
+        usage.forget_all()
+        return out
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001

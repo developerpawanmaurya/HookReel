@@ -34,6 +34,7 @@ services:
       - data:/data
       - ./secrets:/secrets:ro
       - ./.git:/app/.git:ro            # only to tell which version is running, for the update notice
+      - ./hostctl:/hostctl             # the "Update now" button leaves a request here; a helper on the server does the rest
     # Reachable from this server only. On a server that already has a web server, point that one at this port
     # (see deploy/nginx-hookreel.conf). With the "own-https" profile, Caddy below is the web server instead.
     ports: ["127.0.0.1:${HOOKREEL_BIND_PORT:-8765}:8765"]
