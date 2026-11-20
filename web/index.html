@@ -283,6 +283,9 @@ label.ck input{accent-color:var(--brand);margin:0}
 .chip:hover,.chip:focus-visible{background:#EDDBDF;color:var(--text)}
 .chip.on,.pick.open .chip{background:var(--brand-soft);color:var(--brand-ink)}
 .hint{font-size:12px;color:var(--faint);margin-right:6px}
+.jfilter{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.jfilter .chip i{font-style:normal;font-variant-numeric:tabular-nums;opacity:.7}
+.jfilter:empty{display:none}
 .composer-bar{flex-wrap:nowrap}
 .composer-bar .grow{display:none}
 .composer-bar .hint{flex:1 1 0;min-width:0;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -1335,7 +1338,7 @@ function go(v, tab, fromHistory) {
   $("#heroSlot").innerHTML = v === "overview" ? `<section class="hero"><div class="ga-bg" id="appAscii" aria-hidden="true"></div><h2>What do you want to clip today?</h2>
       <p>Paste a link or drop in videos. You get captioned shorts back.</p><div id="add"></div></section>` : "";
   if (v === "overview") view.innerHTML = `<div id="ov"></div>`;
-  else if (v === "library") view.innerHTML = `<div id="add"></div><div id="jobs"></div>`;
+  else if (v === "library") view.innerHTML = `<div id="add"></div><div id="jfilter" class="jfilter" role="toolbar" aria-label="Show"></div><div id="jobs"></div>`;
   else if (v === "settings") view.innerHTML = `<div id="sform"></div>`;
   else if (v === "usage") { view.innerHTML = `<div id="usage"></div>`; loadUsage(); }
   else view.innerHTML = `<div id="stream"></div><div id="cbody"></div>`;   // the live player stays put across tabs: no restart, no rebuffer
@@ -1350,7 +1353,7 @@ function setTab(t) {
   S.ctab = t;
   if (S.view.startsWith("c:")) remember(S.view, t, "replace");
   drawShell();
-  $("#cbody").innerHTML = t === "clips" ? `<div id="live"></div><div id="add"></div><div id="jobs"></div>` : t === "setup" ? `<div id="cform"></div>` : `<div id="clog"></div>`;
+  $("#cbody").innerHTML = t === "clips" ? `<div id="live"></div><div id="add"></div><div id="jfilter" class="jfilter" role="toolbar" aria-label="Show"></div><div id="jobs"></div>` : t === "setup" ? `<div id="cform"></div>` : `<div id="clog"></div>`;
   if ($("#stream")) $("#stream").style.display = t === "clips" ? "" : "none";
   if (t === "clips") drawAdd("compact");
   if (t === "setup") drawCreatorForm();
@@ -1728,8 +1731,9 @@ function liveHtml(j) {
     </div>${j.error ? `<div class="err">${esc(j.error)}</div>` : ""}</div>
     ${j.clips.length ? `<div class="grid" style="margin-bottom:28px">${[...j.clips].reverse().map(c => clipHtml(j, c)).join("")}</div>` : ""}`;
 }
-function jobHtml(j) {
+function jobHtml(j, keep) {
   if (j.status === "live") return liveHtml(j);
+  const shown = keep ? j.clips.filter(keep) : j.clips;
   const busy = j.status === "queued" || j.status === "running";
   const who = !creatorId() && j.creator ? S.creators.find(c => c.id === j.creator)?.name : "";
   const meta = [who, j.uploader, j.duration ? fmt(j.duration) + " long" : "", j.clips.length ? j.clips.length + (j.clips.length === 1 ? " clip" : " clips") : "",
@@ -1743,7 +1747,7 @@ function jobHtml(j) {
     ${busy ? `<div class="bar"><i style="width:${Math.round(j.progress * 100)}%"></i></div><p class="sub">${esc(j.stage)} · ${Math.round(j.progress * 100)}%</p>` : ""}
     ${j.status === "done" && !j.clips.length ? `<p class="sub">${esc(j.stage)}</p>` : ""}
     ${j.error ? `<div class="err">${esc(j.error)}<button class="rep" data-act="report" data-ctx="${esc("Video failed: " + (j.title || j.source.name || "") + " | " + j.error)}">Report this</button></div>` : ""}${j.ai?.note ? `<p class="sub">${esc(j.ai.note)}</p>` : ""}
-    ${j.clips.length ? `<div class="grid">${j.clips.map(c => clipHtml(j, c)).join("")}</div>` : ""}`;
+    ${shown.length ? `<div class="grid">${shown.map(c => clipHtml(j, c)).join("")}</div>` : ""}`;
 }
 /* ---- selecting several videos and clips: delete or download them together */
 const sel = () => (S.sel = S.sel || new Set());
@@ -1770,7 +1774,8 @@ function drawSelBar() {
   if (!n) return;
   put(bar, `<b>${n} selected</b>
     <button class="btn sm" data-act="selall">Select all</button>
-    <button class="btn sm primary" data-act="seldl" ${dl ? "" : "disabled"}>${ic("down")}Download${dl ? ` ${dl} clip${dl === 1 ? "" : "s"}` : ""}</button>
+    <button class="btn sm primary" data-act="selpost" ${dl ? "" : "disabled"}>${ic("send")}Post${dl ? ` ${dl} clip${dl === 1 ? "" : "s"}` : ""}</button>
+    <button class="btn sm" data-act="seldl" ${dl ? "" : "disabled"}>${ic("down")}Download</button>
     <button class="btn sm danger" data-act="seldel">${ic("trash")}Delete</button>
     <button class="btn sm" data-act="selclear">Cancel</button>`);
 }
@@ -1779,6 +1784,34 @@ function zipDownload(ids) {
   if (ids.length > 150) return toast("That is a lot at once. Download up to 150 clips at a time.", "bad");
   toast(ids.length === 1 ? "Preparing your clip…" : `Preparing ${ids.length} clips as one download…`, "ok");
   const a = document.createElement("a"); a.href = "/api/clips.zip?ids=" + encodeURIComponent(ids.join(",")); a.download = ""; document.body.append(a); a.click(); a.remove();
+}
+function bulkPost(ids) {        // ids are "job.clip" for finished clips
+  if (!ids.length) return toast("None of those clips are ready to post yet.");
+  if (!S.accounts.length) return toast("No accounts connected yet. Connect one in Settings, Connected apps.", "bad");
+  const d = $("#formdlg"), n = ids.length, s = n === 1 ? "" : "s";
+  d.innerHTML = `<form method="dialog" class="dlg"><h2>Post ${n} clip${s}</h2>
+    <p class="help">Pick where they go. <b>Add to queue</b> spaces them out using each creator's gap between posts and daily limit. A clip is never sent to the same account twice.</p>
+    <div class="row">${S.accounts.map(a => `<label class="ck"><input type="checkbox" data-bacc value="${esc(a.id)}">${esc(a.label)} · ${esc(a.name)}</label>`).join("")}</div>
+    <div class="dlg-foot"><button class="btn" value="no">Cancel</button><button class="btn" value="now" disabled>Post now</button><button class="btn primary" value="queue" disabled>Add to queue</button></div></form>`;
+  const boxes = $$("[data-bacc]", d), goBtns = $$(".dlg-foot [value=now], .dlg-foot [value=queue]", d);
+  boxes.forEach(b => b.addEventListener("change", () => goBtns.forEach(x => x.disabled = !boxes.some(y => y.checked))));
+  d.onclose = async () => {
+    const how = d.returnValue, accs = boxes.filter(b => b.checked).map(b => b.value);
+    if ((how !== "now" && how !== "queue") || !accs.length) return;
+    if (how === "now" && !await ask("Post now?", `${n} clip${s} go to ${accs.length} account${accs.length > 1 ? "s" : ""} straight away, without spacing them out.`, "Post now")) return;
+    toast(`Sending ${n} clip${s}…`);
+    let queued = 0, skipped = 0, failed = 0;
+    for (const id of ids) {
+      const [job, clip] = id.split(".");
+      try { queued += (await send("/api/posts", {job, clip, accounts: accs, now: how === "now"})).queued; }
+      catch (e) { if (/Nothing was queued/.test(e.message)) skipped++; else failed++; }
+    }
+    sel().clear(); await tick(); render();
+    toast((queued ? `${how === "now" ? "Posting" : "Queued"} ${queued} post${queued === 1 ? "" : "s"}` : "Nothing new to post")
+      + (skipped ? `. ${skipped} clip${skipped === 1 ? " was" : "s were"} already sent to those accounts` : "")
+      + (failed ? `. ${failed} could not be added` : "") + ".", failed ? "bad" : "ok");
+  };
+  d.returnValue = "no"; d.showModal();
 }
 function askTyped(title, text, mustType, okLabel) {
   return new Promise(res => {
@@ -1791,6 +1824,23 @@ function askTyped(title, text, mustType, okLabel) {
     d.onclose = () => res(d.returnValue === "yes" ? i.value.trim() : null); d.returnValue = "no"; d.showModal(); i.focus();
   });
 }
+/* ---- showing only posted, not yet posted, or failed videos and clips */
+const livePosts = c => Object.values(c.posts || {}).filter(p => p.status !== "cancelled");
+const JF = {
+  all:      {label: "All"},
+  unposted: {label: "Not posted", clip: c => c.status === "done" && !livePosts(c).length},
+  posted:   {label: "Posted", clip: c => livePosts(c).some(p => p.status === "posted")},
+  failed:   {label: "Failed", clip: c => c.status === "error" || livePosts(c).some(p => p.status === "failed"), job: j => j.status === "error"},
+};
+function jfMatch(j, f) { return f === "all" || JF[f].job?.(j) || j.clips.some(JF[f].clip); }
+function drawFilter(list) {
+  const box = $("#jfilter"); if (!box) return;
+  if (!list.length && S.jf === "all") return put(box, "");
+  put(box, Object.entries(JF).map(([k, f]) => {
+    const n = k === "all" ? list.length : list.filter(j => jfMatch(j, k)).length;
+    return `<button class="chip ${S.jf === k ? "on" : ""}" data-act="jf" data-f="${k}" aria-pressed="${S.jf === k}">${f.label} <i>${n}</i></button>`;
+  }).join(""));
+}
 function drawJobs() {
   const root = $("#jobs"); if (!root) return;
   const cid = creatorId();
@@ -1799,19 +1849,30 @@ function drawJobs() {
   if (liveBox) { const lj = list.find(j => j.status === "live");
     if (!liveBox.querySelector(".pick.open")) put(liveBox, lj ? liveHtml(lj) : "");  // don't redraw under an open menu
     list = list.filter(j => j.status !== "live"); }
+  S.jf = JF[S.jf] ? S.jf : "all";
+  drawFilter(list);
+  const f = S.jf;
+  if (f !== "all" && list.length) {
+    list = list.filter(j => jfMatch(j, f));
+    if (!list.length) {
+      root.querySelectorAll("section").forEach(e => e.remove());
+      root.innerHTML = `<div class="empty jfe"><img src="/brand/favicon.svg" alt=""><b>Nothing here</b>${f === "failed" ? "No videos or clips have failed." : f === "posted" ? "No clips have been posted yet." : "Every finished clip has been posted or queued."}</div>`;
+      return;
+    }
+  }
   if (!list.length) {
     root.querySelectorAll("section").forEach(e => e.remove());
-    if (!$(".empty", root)) root.innerHTML = `<div class="empty"><img src="/brand/favicon.svg" alt=""><b>${cid ? "No clips for this creator yet" : "No videos yet"}</b>${cid ? "Start recording their stream, or paste a link to one of their videos above." : "Paste a link above and the studio will find the best moments and turn them into clips."}</div>`;
+    if (!$(".empty:not(.jfe)", root)) root.innerHTML = `<div class="empty"><img src="/brand/favicon.svg" alt=""><b>${cid ? "No clips for this creator yet" : "No videos yet"}</b>${cid ? "Start recording their stream, or paste a link to one of their videos above." : "Paste a link above and the studio will find the best moments and turn them into clips."}</div>`;
     return;
   }
-  $(".empty", root)?.remove();
+  $$(".empty", root).forEach(e => e.remove());
   const ids = new Set(list.map(j => j.id));
   $$("section[data-job]", root).forEach(el => { if (!ids.has(el.dataset.job)) el.remove(); });
   list.forEach((j, i) => {
     let el = $(`section[data-job="${j.id}"]`, root);
     if (!el) { el = document.createElement("section"); el.className = "job"; el.dataset.job = j.id; }
     if (root.children[i] !== el) root.insertBefore(el, root.children[i] || null);
-    put(el, jobHtml(j));
+    put(el, jobHtml(j, f === "all" ? null : JF[f].clip));
   });
 }
 
@@ -2346,10 +2407,17 @@ document.addEventListener("click", async e => {
     }
     if (a === "dlall") return zipDownload((jobOf(d.j)?.clips || []).filter(c => c.status === "done").map(c => d.j + "." + c.id));
     if (a === "seldl") return zipDownload(selClips());
+    if (a === "selpost") return bulkPost(selClips());
+    if (a === "jf") { S.jf = d.f; sel().clear(); return render(); }
     if (a === "selclear") { sel().clear(); return render(); }
     if (a === "selall") {
       const cid = creatorId();
-      (cid ? S.jobs.filter(j => j.creator === cid) : S.jobs).forEach(j => { if (!["queued", "running", "live"].includes(j.status)) { sel().add("j:" + j.id); j.clips.forEach(c => sel().delete(`c:${j.id}:${c.id}`)); } });
+      const keep = S.jf && S.jf !== "all" ? JF[S.jf].clip : null;
+      (cid ? S.jobs.filter(j => j.creator === cid) : S.jobs).forEach(j => {
+        if (["queued", "running", "live"].includes(j.status)) return;
+        if (!keep) { sel().add("j:" + j.id); j.clips.forEach(c => sel().delete(`c:${j.id}:${c.id}`)); return; }
+        j.clips.forEach(c => { if (keep(c) && c.status !== "queued" && c.status !== "rendering") sel().add(`c:${j.id}:${c.id}`); });   // only what the filter shows
+      });
       return render();
     }
     if (a === "seldel") {
