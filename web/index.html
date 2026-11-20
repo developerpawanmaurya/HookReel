@@ -1675,9 +1675,9 @@ async function makeClips() {
 function scoreCls(s) { return s >= 80 ? "s-hi" : s >= 60 ? "s-mid" : ""; }
 function postPills(c) {
   return Object.values(c.posts || {}).filter(p => p.status !== "cancelled").map(p => {
-    const cls = p.status === "posted" ? "ok" : p.status === "failed" ? "bad" : "warn";
-    const txt = `${esc(p.account_name)} · ${p.status === "scheduled" ? clock(p.due_at) : p.status}`;
-    return p.url ? `<a class="pill ${cls}" href="${esc(p.url)}" target="_blank" rel="noopener">${txt}</a>` : `<span class="pill ${cls}" title="${esc(p.error || "")}">${txt}</span>`;
+    const cls = p.note ? "warn" : p.status === "posted" ? "ok" : p.status === "failed" ? "bad" : "warn";
+    const txt = `${esc(p.account_name)} · ${p.status === "scheduled" ? clock(p.due_at) : p.note ? "posted (private)" : p.status}`;
+    return p.url ? `<a class="pill ${cls}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(p.note || "")}">${txt}</a>` : `<span class="pill ${cls}" title="${esc(p.error || "")}">${txt}</span>`;
   }).join("");
 }
 function clipHtml(j, c) {
@@ -1790,7 +1790,7 @@ function bulkPost(ids) {        // ids are "job.clip" for finished clips
   if (!S.accounts.length) return toast("No accounts connected yet. Connect one in Settings, Connected apps.", "bad");
   const d = $("#formdlg"), n = ids.length, s = n === 1 ? "" : "s";
   d.innerHTML = `<form method="dialog" class="dlg"><h2>Post ${n} clip${s}</h2>
-    <p class="help">Pick where they go. <b>Add to queue</b> spaces them out using each creator's gap between posts and daily limit. A clip is never sent to the same account twice.</p>
+    <p class="help">Pick where they go. <b>Add to queue</b> spaces them out using each creator's gap between posts and daily limit. A clip already sent to an account is skipped; you can choose to send it again.</p>
     <div class="row">${S.accounts.map(a => `<label class="ck"><input type="checkbox" data-bacc value="${esc(a.id)}">${esc(a.label)} · ${esc(a.name)}</label>`).join("")}</div>
     <div class="dlg-foot"><button class="btn" value="no">Cancel</button><button class="btn" value="now" disabled>Post now</button><button class="btn primary" value="queue" disabled>Add to queue</button></div></form>`;
   const boxes = $$("[data-bacc]", d), goBtns = $$(".dlg-foot [value=now], .dlg-foot [value=queue]", d);
@@ -1800,11 +1800,15 @@ function bulkPost(ids) {        // ids are "job.clip" for finished clips
     if ((how !== "now" && how !== "queue") || !accs.length) return;
     if (how === "now" && !await ask("Post now?", `${n} clip${s} go to ${accs.length} account${accs.length > 1 ? "s" : ""} straight away, without spacing them out.`, "Post now")) return;
     toast(`Sending ${n} clip${s}…`);
-    let queued = 0, skipped = 0, failed = 0;
-    for (const id of ids) {
+    let queued = 0, skipped = 0, failed = 0; const dup = [];
+    const one = async (id, again) => {
       const [job, clip] = id.split(".");
-      try { queued += (await send("/api/posts", {job, clip, accounts: accs, now: how === "now"})).queued; }
-      catch (e) { if (/Nothing was queued/.test(e.message)) skipped++; else failed++; }
+      try { queued += (await send("/api/posts", {job, clip, accounts: accs, now: how === "now", again})).queued; }
+      catch (e) { if (/^Already posted/.test(e.message)) { skipped++; dup.push(id); } else failed++; }
+    };
+    for (const id of ids) await one(id, false);
+    if (dup.length && await ask("Post them again?", `${dup.length} clip${dup.length === 1 ? " has" : "s have"} already gone to those accounts. Send another copy?`, "Post again")) {
+      skipped = 0; for (const id of dup) await one(id, true);
     }
     sel().clear(); await tick(); render();
     toast((queued ? `${how === "now" ? "Posting" : "Queued"} ${queued} post${queued === 1 ? "" : "s"}` : "Nothing new to post")
@@ -2543,7 +2547,13 @@ document.addEventListener("click", async e => {
       const accs = $$("#clipdlg [data-pacc]:checked").map(i => i.value);
       if (!accs.length) return toast("Tick at least one account first.", "bad");
       if (a === "postnow" && !await ask("Post now?", `This clip goes to ${accs.length} account${accs.length > 1 ? "s" : ""} straight away.`, "Post now")) return;
-      await send("/api/posts", {job:D.jid, clip:D.cid, accounts:accs, now:a === "postnow"});
+      const body = {job:D.jid, clip:D.cid, accounts:accs, now:a === "postnow"};
+      try { await send("/api/posts", body); }
+      catch (e) {
+        if (!/^Already posted/.test(e.message)) throw e;
+        if (!await ask("Post it again?", "This clip has already gone to the account" + (accs.length > 1 ? "s" : "") + " you picked. Send another copy?", "Post again")) { b.disabled = false; return; }
+        await send("/api/posts", {...body, again:true});
+      }
       toast(a === "postnow" ? "Posting now" : "Added to the queue", "ok"); return tick();
     }
   } catch (err) { b.disabled = false; toast(err.message, "bad"); }

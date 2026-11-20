@@ -372,7 +372,13 @@ def youtube_upload(acc, path: Path, title: str, description: str, tags: list, pr
         done = _check(httpx.put(start.headers["Location"], content=f.read(),
                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "video/mp4"}, timeout=900),
                       "Uploading to YouTube").json()
-    return done["id"], f"https://www.youtube.com/shorts/{done['id']}"
+    got = (done.get("status") or {}).get("privacyStatus") or privacy
+    note = YT_LOCKED if privacy != "private" and got == "private" else ""
+    return done["id"], f"https://www.youtube.com/shorts/{done['id']}", note
+
+
+YT_LOCKED = ("YouTube locked this upload as private because the Google Cloud project hasn't passed YouTube's API audit yet. "
+             "Uploads become public once the audit is approved. Until then, upload this clip by hand in YouTube Studio to post it publicly.")
 
 
 def youtube_views(acc, ids: list) -> dict:
